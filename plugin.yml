@@ -1,0 +1,9 @@
+---
+name: OmniQuest
+version: 0.0.1
+main: OmniQuest\Main
+api: 4.21.0
+author: 
+- AmitxD
+website: https://github.com/Amitminer/Omni-Quest/
+...
