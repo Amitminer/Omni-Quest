@@ -1,0 +1,25 @@
+---
+name: OmniQuest
+version: 1.0.0-beta1
+author: AmitxD
+main: AmitxD\OmniQuest\OmniQuest
+src-namespace-prefix: AmitxD\OmniQuest
+api: 5.0.0
+website: https://github.com/Amitminer/OmniQuest
+commands:
+  quest:
+    description: open quest menu
+    usage: "/quest"
+    aliases:
+      - q
+      - tasks
+    permission: omniquest.command.use
+  questcategory:
+    description: manage categories
+    permission: omniquest.command.manage
+permissions:
+  omniquest.command.use:
+    default: true
+  omniquest.command.manage:
+    default: op
+...
