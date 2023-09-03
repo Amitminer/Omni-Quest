@@ -4,65 +4,73 @@ declare(strict_types = 1);
 
 namespace AmitxD\OmniQuest;
 
-use AmitxD\OmniQuest\Manager\FormManager;
-use AmitxD\OmniQuest\Manager\MessageManager;
-use AmitxD\OmniQuest\Manager\CategoryManager;
-use AmitxD\OmniQuest\Commands\CategoryCommands;
-use pocketmine\command\Command;
-use pocketmine\command\CommandSender;
 use pocketmine\plugin\PluginBase;
-use pocketmine\player\Player;
 use pocketmine\utils\Config;
+use AmitxD\OmniQuest\commands\QuestCommand;
+use AmitxD\OmniQuest\Manager\QuestManager;
+use AmitxD\OmniQuest\Manager\EventManager;
 
-class OmniQuest extends PluginBase {
+class OmniQuest extends PluginBase
+{
 
-    protected static $instance;
+    private $config;
+    private $categories = [];
+    private $quests;
+    private $questManager;
+    public static $instance;
 
-    protected function onLoad(): void {
+    public function onLoad() : void
+    {
         self::$instance = $this;
     }
 
-    protected function onEnable(): void {
+    public function onEnable() : void
+    {
         $this->saveDefaultConfig();
-        $this->loadCategories();
+        $this->config = $this->getConfig();
+        if (!file_exists($this->getDataFolder()."data.db")) $this->saveResource("data.db");
+        $this->initQuests();
+        $this->questManager = new QuestManager();
+        $this->getServer()->getPluginManager()->registerEvents(new EventManager($this), $this);
+        $this->getServer()->getCommandMap()->register("quest", new QuestCommand($this, "quest"));
     }
 
-    private function loadCategories(): void {
-        $config = new Config($this->getDataFolder() . "categories.yml", Config::YAML);
-        $categories = $config->get("categories", []);
-        CategoryManager::getInstance()->setCategories($categories);
-    }
+    public function initQuests(): void {
+        $config = $this->config;
+        $quests = $this->quests;
 
-    protected function onDisable(): void {}
-
-    public function onCommand(CommandSender $sender, Command $cmd, string $label, array $args): bool {
-        if (!$sender instanceof Player) {
-            $sender->sendMessage(MessageManager::NOCONSOLE);
-            return false;
+        foreach ($config->get("categories") as $category) {
+            foreach ($category as $key => $value) {
+                $this->quests[$key] = $value;
+            }
         }
-        switch ($cmd->getName()) {
-            case "quest":
-                FormManager::QuestCategoryForm($sender);
-                break;
-            case "questcategory":
-                CategoryCommands::handleCommand($sender, $cmd, $label, $args);
-                break;
+        foreach ($config->getNested("categories") as $category => $value) {
+            $quests[$category] = array();
+            foreach (array_keys($value) as $categoryValue) {
+                array_push($quests[$category], $categoryValue);
+            }
         }
-        return true;
+        $this->categories = $quests;
+        QuestManager::initDb();
     }
 
-    public function getConfigValue(string $name) {
-        $config = $this->getConfig();
-        return $config->get($name);
-    }
-
-    public function setConfigValue(string $name, $value): bool {
-        $config = $this->getConfig();
-        $config->set($name, $value);
-        return $config->save();
-    }
-
-    public static function getInstance(): self {
+    public static function getInstance() : self {
         return self::$instance;
+    }
+
+    public function getCategories() {
+        return $this->categories;
+    }
+
+    public function getQuests() {
+        return $this->quests;
+    }
+
+    public function getQuestManager(): QuestManager {
+        return $this->questManager;
+    }
+
+    public function getQuestConfig() : Config {
+        return $this->config;
     }
 }

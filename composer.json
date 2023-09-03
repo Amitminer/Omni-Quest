@@ -1,0 +1,23 @@
+{
+    "name": "amitxd/omniquest",
+    "description": "ultimate quest plugin for Omnicraft..",
+    "scripts": {
+        "cs-fix": "vendor/bin/php-cs-fixer fix",
+        "analyze": "vendor/bin/phpstan analyze src"
+    },
+    "require": {
+        "phpstan/phpstan": "^1.10.29",
+        "pocketmine/pocketmine-mp": "^5",
+        "phpstan/phpstan-strict-rules": "^1.0",
+        "phpstan/extension-installer": "^1.0"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.17"
+    },
+    "license": "MIT Licence",
+    "config": {
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
+    }
+}
