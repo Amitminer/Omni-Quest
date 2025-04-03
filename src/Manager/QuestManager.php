@@ -7,194 +7,222 @@ use pocketmine\utils\Config;
 use pocketmine\console\ConsoleCommandSender;
 use pocketmine\Server;
 use AmitxD\OmniQuest\OmniQuest;
+use OmniCore\lib\davidglitch04\libEco\libEco;
 
 class QuestManager
 {
+    private static ?OmniQuest $plugin = null;
 
-    public static function getQuestInfoById(int $id, string $name) {
-        $cat = array_values(OmniQuest::getInstance()->getCategories());
-        $quests = OmniQuest::getInstance()->getQuests();
-
-        foreach ($cat[$id] as $questName) {
-            if ($name === $questName) return $quests[$questName];
-        }
+    private static function getPlugin(): OmniQuest
+    {
+        return self::$plugin ??= OmniQuest::getInstance();
     }
 
-    public static function getQuestInfo(string $name) {
-        $quests = OmniQuest::getInstance()->getQuests();
-
-        return $quests[$name];
+    public static function getQuestInfoById(int $id, string $name)
+    {
+        $categories = array_values(self::getPlugin()->getCategories());
+        $quests = self::getPlugin()->getQuests();
+        return isset($categories[$id]) && in_array($name, $categories[$id]) ? $quests[$name] : null;
     }
 
-    public static function getQuestNameById(int $questId, int $categoryId) {
-        $quests = OmniQuest::getInstance()->getQuests();
-        $category = array_values(OmniQuest::getInstance()->getCategories());
-
-        foreach ($category[$categoryId] as $key => $name) {
-            if ($key === $questId) return $name;
-        }
+    public static function getQuestInfo(string $name)
+    {
+        return CacheManager::getQuestInfo($name);
     }
 
-    public static function getCategoriesName() {
-        $categories = array_keys(OmniQuest::getInstance()->getCategories());
-        $return = [];
-        foreach ($categories as $name) {
-            array_push($return, $name);
-        }
-        return $return;
+    public static function getQuestNameById(int $questId, int $categoryId)
+    {
+        $categories = array_values(self::getPlugin()->getCategories());
+        return $categories[$categoryId][$questId] ?? null;
     }
 
-    public static function getCategory(int $id) {
-        $categories = array_keys(OmniQuest::getInstance()->getCategories());
-        return $categories[$id];
+    public static function getCategoriesName(): array
+    {
+        return array_keys(self::getPlugin()->getCategories());
     }
 
-    public static function getUserData(string $player) {
-        $db = self::getDb();
-
-        $result = $db->query("SELECT * FROM users WHERE name='$player'");
-        $array = $result->fetchArray(SQLITE3_ASSOC);
-        return $array;
+    public static function getCategory(int $id)
+    {
+        $categories = self::getCategoriesName();
+        return $categories[$id] ?? null;
     }
 
-    public static function getUserQuestData(string $player, string $quest) {
-        $db = self::getDb();
-
-        $result = $db->query("SELECT * FROM $quest WHERE user='$player'");
-        $array = $result->fetchArray(SQLITE3_ASSOC);
-        return $array;
+    public static function getUserData(string $player)
+    {
+        return CacheManager::getCachedUserData($player);
     }
 
-    public static function numRows(\SQLite3Result $res) {
-        $num = 0;
-        $res->reset();
-        while ($res->fetchArray()) $num++;
-        return $num;
+    public static function getUserQuestData(string $player, string $quest)
+    {
+        $progress = CacheManager::getCachedProgress($player, $quest);
+        return $progress !== null ? ['progress' => $progress] : null;
     }
 
-    public static function setCompleted(string $player, string $quest) {
-        $db = self::getDb();
-        $db->exec("UPDATE $quest SET progress='FINISHED' WHERE user='$player'");
-    }
-
-    public static function isCompleted(string $player, string $quest) {
-        $db = self::getDb();
-        $res = $db->query("SELECT * FROM $quest WHERE user='$player'");
-        $array = $res->fetchArray();
-
-        if ($array["progress"] === "FINISHED") {
-            return true;
-        } else
-        {
-            return false;
-        }
-    }
-
-    public static function incrementProgress(Player $player, string $quest) {
-        $db = self::getDb();
-        $name = $player->getName();
-        $usrData = self::getUserData($player->getName());
-        $questData = self::getQuestInfo($quest);
-        $server = Server::getInstance();
-        $n = self::getProgress($player->getName(), $quest) + 1;
-        if ($n >= $questData["number"]) {
-            self::setCompleted($player->getName(), $quest);
-            self::resetQuest($player->getName());
-            $str = str_replace("{QUEST}", $questData["name"], OmniQuest::getInstance()->getQuestConfig()->get("finished-quest-message"));
-            $player->sendMessage($str);
-            foreach ($questData["rewards"] as $command) {
-                $cmd = str_replace("{PLAYER}", $name, $command);
-                $server->dispatchCommand(new ConsoleCommandSender($server, $server->getLanguage()),$cmd);
+    public static function setCompleted(string $player, string $quest): void
+    {
+        DatabaseManager::setCompleted($player, $quest);
+        CacheManager::updateProgress($player, $quest, "FINISHED");
+        CacheManager::clearPlayerCache($player); // Clear user cache as quest status changed
+        
+        // Get player instance and quest data
+        $playerInstance = Server::getInstance()->getPlayerExact($player);
+        if ($playerInstance instanceof Player) {
+            $questData = self::getQuestInfo($quest);
+            if ($questData) {
+                // Send completion title
+                $playerInstance->sendTitle(
+                    "§6✦ §aQuest Completed! §6✦",
+                    "§f" . $questData["name"],
+                    20,
+                    60,
+                    20
+                );
+                
+                // Send popup message
+                $playerInstance->sendPopup("§e✦ §fCompleted Quest: §a" . $questData["name"] . " §e✦");
+                
+                // Handle money reward first
+                if (isset($questData["money"]) && is_numeric($questData["money"])) {
+                    $money = (int)$questData["money"];
+                    if ($money > 0) {
+                    libEco::addMoney($playerInstance, $money);
+                        $playerInstance->sendMessage("§a+ §e$" . number_format($money) . " §7(Quest Reward)");
+                    }
+                }
+                
+                // Send rewards message if there are any rewards
+                $hasRewards = (isset($questData["money"]) && $questData["money"] > 0) || 
+                             (isset($questData["rewards"]) && !empty($questData["rewards"]));
+                
+                if ($hasRewards) {
+                    $rewardsText = "§eRewards received:§r\n";
+                    if (isset($questData["money"]) && $questData["money"] > 0) {
+                        $rewardsText .= "§7- §e$" . number_format($questData["money"]) . " §7coins\n";
+                    }
+                    
+                    if (isset($questData["rewards"]) && is_array($questData["rewards"])) {
+                        foreach ($questData["rewards"] as $command) {
+                            if (strpos($command, "give") !== false) {
+                                $rewardsText .= "§7- " . str_replace(["/give {PLAYER} ", ":"], ["", " "], $command) . "\n";
+                            }
+                        }
+                    }
+                    $playerInstance->sendMessage($rewardsText);
+                }
+                
+                // Execute command rewards if they exist
+                if (isset($questData["rewards"]) && is_array($questData["rewards"])) {
+                    foreach ($questData["rewards"] as $command) {
+                        Server::getInstance()->dispatchCommand(
+                            new ConsoleCommandSender(Server::getInstance(), Server::getInstance()->getLanguage()),
+                            str_replace("{PLAYER}", $player, $command)
+                        );
+                    }
+                }
             }
-        } else {
-            $db->exec("UPDATE $quest SET progress = progress + 1 WHERE user='$name'");
         }
     }
 
-    public static function updateQuest(Player $player, int $category, string $quest) {
-        $usrData = self::getUserData($player->getName());
+    public static function isCompleted(string $player, string $quest): bool
+    {
+        $progress = CacheManager::getCachedProgress($player, $quest);
+        return $progress === "FINISHED";
+    }
+
+    public static function getProgress(string $player, string $quest): int
+    {
+        $progress = CacheManager::getCachedProgress($player, $quest);
+        if ($progress === "FINISHED" || !is_numeric($progress)) {
+            return 0;
+        }
+        return (int)$progress;
+    }
+
+    public static function incrementProgress(Player $player, string $quest): void
+    {
+        $name = $player->getName();
+        $questData = self::getQuestInfo($quest);
+
+        if (!$questData) return;
+
+        $currentProgress = self::getProgress($name, $quest);
+        $newProgress = $currentProgress + 1;
+        
+        DatabaseManager::incrementProgress($name, $quest);
+        CacheManager::updateProgress($name, $quest, $newProgress);
+
+        // Show progress popup
+        $total = $questData["number"];
+        $progressPercent = round(($newProgress / $total) * 100, 1);
+        $progressBar = str_repeat("█", (int)($progressPercent/10)) . str_repeat("▒", 10 - (int)($progressPercent/10));
+        $player->sendPopup("§e" . $questData["name"] . "\n§7" . $progressBar . " §f" . $progressPercent . "%");
+
+        if ($newProgress >= $questData["number"]) {
+            self::setCompleted($name, $quest);
+            self::resetQuest($name);
+        }
+    }
+
+    public static function updateQuest(Player $player, int $category, string $quest): void
+    {
+        $name = $player->getName();
+        $usrData = self::getUserData($name);
         $questData = self::getQuestInfoById($category, $quest);
 
+        if (!$questData) return;
+
         if ($usrData["current"] === $quest) {
-            self::resetQuest($player->getName());
-            $str = str_replace("{QUEST}", $questData["name"], OmniQuest::getInstance()->getQuestConfig()->get("paused-quest"));
-            $player->sendMessage($str);
-        } else
-        {
-            self::setCurrent($player->getName(), $quest);
-            $str = str_replace("{QUEST}", $questData["name"], OmniQuest::getInstance()->getQuestConfig()->get("started-quest"));
-            $player->sendMessage($str);
-        }
-    }
-
-    public static function registerUser(string $name) {
-        $db = self::getDb();
-        $quests = OmniQuest::getInstance()->getQuests();
-        $queries = [];
-
-        foreach ($quests as $questName => $value) {
-            $result = $db->query("SELECT * FROM $questName WHERE user ='$name'");
-            if (self::numRows($result) <= 0) {
-                $db->exec("INSERT INTO $questName(user, progress) VALUES ('$name', 0)");
-                OmniQuest::getInstance()->getLogger()->info("Register " . $name . " in quest " . $questName);
+            self::resetQuest($name);
+            $player->sendMessage(str_replace("{QUEST}", $questData["name"], self::getPlugin()->getQuestConfig()->get("paused-quest")));
+        } else {
+            self::setCurrent($name, $quest);
+            $player->sendMessage(str_replace("{QUEST}", $questData["name"], self::getPlugin()->getQuestConfig()->get("started-quest")));
+            
+            // Show instructions for command-based quests
+            if (isset($questData["type"]) && $questData["type"] === "command") {
+                // $player->sendTitle(
+                //     "§6Quest Instructions",
+                //     "§fUse: §e/" . $questData["command"],
+                //     10,
+                //     60,
+                //     10
+                // );
+                $player->sendMessage("\n§6Quest Instructions:\n§7" . $questData["description"]);
             }
         }
-
-        $result = $db->query("SELECT * FROM users WHERE name='$name'");
-        if (self::numRows($result) <= 0) {
-            $db->exec(("INSERT INTO users(name, current) VALUES ('$name', NULL)"));
-            OmniQuest::getInstance()->getLogger()->info("Register " . $name);
-        }
     }
 
-    public static function getProgress(string $player, string $quest) {
-        $db = self::getDb();
-
-        $res = $db->query("SELECT * FROM $quest WHERE user='$player'");
-        $arr = $res->fetchArray();
-        return $arr["progress"];
+    public static function registerUser(string $name): void
+    {
+        DatabaseManager::registerUser($name);
     }
 
-    public static function setCurrent(string $player, string $quest) {
-        $db = self::getDb();
-
-        $db->exec("UPDATE users SET current='$quest' WHERE name='$player'");
+    public static function setCurrent(string $player, string $quest): void
+    {
+        DatabaseManager::setCurrent($player, $quest);
+        CacheManager::clearPlayerCache($player); // Clear cache as current quest changed
     }
 
-    public static function resetQuest(string $player) {
-        $db = self::getDb();
-
-        $db->exec("UPDATE users SET current=NULL WHERE name='$player'");
+    public static function resetQuest(string $player): void
+    {
+        DatabaseManager::resetQuest($player);
+        CacheManager::clearPlayerCache($player); // Clear cache as quest was reset
     }
 
-    public static function isCurrent(string $player, string $name) {
-        $data = self::getUserData($player);
-
-        if (is_array($data) && isset($data["current"]) && $data["current"] === $name) {
-            return true;
-        } else {
-            return false;
-        }
+    public static function isCurrent(string $player, string $name): bool
+    {
+        $data = CacheManager::getCachedUserData($player);
+        return isset($data["current"]) && $data["current"] === $name;
     }
 
-    public static function initDb() {
-        $db = self::getDb();
-        $quests = OmniQuest::getInstance()->getQuests();
-        $queries = [
-            "CREATE TABLE IF NOT EXISTS users(name VARCHAR(255), current TEXT)"
-        ];
-
-        foreach ($quests as $name => $value) {
-            array_push($queries, "CREATE TABLE IF NOT EXISTS " . $name . "(user VARCHAR(255), progress INT)");
-        }
-
-        foreach ($queries as $query) {
-            $db->exec($query);
-        }
+    public static function initDb(): void
+    {
+        DatabaseManager::initDb();
     }
 
-    public static function getDb() {
-        $db = new \SQLite3(OmniQuest::getInstance()->getDataFolder() . "data.db");
-        return $db;
+    public static function closeDb(): void
+    {
+        DatabaseManager::closeDb();
+        CacheManager::clearAllCache();
     }
 }

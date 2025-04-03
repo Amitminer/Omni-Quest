@@ -34,26 +34,44 @@ class QuestCommand extends Command
     public function execute(CommandSender $sender, string $label, array $args): void {
         if (!$sender instanceof Player) return;
 
-        $form = new CategoryForm(function (Player $player, int $data = null): void {
+        $this->showCategoryForm($sender);
+    }
+
+    private function showCategoryForm(Player $player): void {
+        $form = new CategoryForm(function (Player $player, $data = null): void {
             if (is_null($data)) return;
             $this->category[$player->getName()] = $data;
-
-            $form = new QuestForm(function(Player $player, int $data = null): void {
-                if (is_null($data)) return;
-                $this->quest[$player->getName()] = QuestManager::getQuestNameById($data, $this->category[$player->getName()]);
-                if (QuestManager::isCompleted($player->getName(), $this->quest[$player->getName()])) $player->sendMessage($this->plugin->getQuestConfig()->get("quest-already-finished"));
-
-                $form = new QuestInfoForm(function(Player $player, bool $data = null): void {
-                    if (is_null($data)) return;
-                    if ($data) QuestManager::updateQuest($player, $this->category[$player->getName()], $this->quest[$player->getName()]);
-                },
-                    $player,
-                    $this->category[$player->getName()],
-                    $data);
-                $player->sendForm($form);
-            }, $player, $data);
-            $player->sendForm($form);
+            $this->showQuestForm($player);
         });
-        $sender->sendForm($form);
+        $player->sendForm($form);
+    }
+
+    private function showQuestForm(Player $player): void {
+        $form = new QuestForm(function(Player $player, $data = null): void {
+            if (is_null($data)) {
+                $this->showCategoryForm($player); // Return to categories when exit pressed
+                return;
+            }
+            $this->quest[$player->getName()] = QuestManager::getQuestNameById($data, $this->category[$player->getName()]);
+            if (QuestManager::isCompleted($player->getName(), $this->quest[$player->getName()])) {
+                $player->sendMessage($this->plugin->getQuestConfig()->get("quest-already-finished"));
+            }
+            $this->showQuestInfoForm($player, $data);
+        }, $player, $this->category[$player->getName()]);
+        $player->sendForm($form);
+    }
+
+    private function showQuestInfoForm(Player $player, int $questId): void {
+        $form = new QuestInfoForm(function(Player $player, $data = null): void {
+            if (is_null($data)) {
+                $this->showQuestForm($player); // Return to quest list when exit pressed
+                return;
+            }
+            // Check if the toggle button was enabled (last element in the form)
+            if (end($data) === true) {
+                QuestManager::updateQuest($player, $this->category[$player->getName()], $this->quest[$player->getName()]);
+            }
+        }, $player, $this->category[$player->getName()], $questId);
+        $player->sendForm($form);
     }
 }

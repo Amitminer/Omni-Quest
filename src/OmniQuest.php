@@ -9,6 +9,9 @@ use pocketmine\utils\Config;
 use AmitxD\OmniQuest\commands\QuestCommand;
 use AmitxD\OmniQuest\Manager\QuestManager;
 use AmitxD\OmniQuest\Manager\EventManager;
+use AmitxD\OmniQuest\Manager\DatabaseManager;
+use AmitxD\OmniQuest\Manager\CacheManager;
+use AmitxD\OmniQuest\scorehud\ScoreHudAddon;
 
 class OmniQuest extends PluginBase
 {
@@ -31,8 +34,15 @@ class OmniQuest extends PluginBase
         if (!file_exists($this->getDataFolder()."data.db")) $this->saveResource("data.db");
         $this->initQuests();
         $this->questManager = new QuestManager();
+        $scoreHud = new ScoreHudAddon($this);
         $this->getServer()->getPluginManager()->registerEvents(new EventManager($this), $this);
         $this->getServer()->getCommandMap()->register("quest", new QuestCommand($this, "quest"));
+    }
+
+    public function onDisable() : void
+    {
+        DatabaseManager::closeDb();
+        CacheManager::clearAllCache();
     }
 
     public function initQuests(): void {
@@ -51,7 +61,10 @@ class OmniQuest extends PluginBase
             }
         }
         $this->categories = $quests;
-        QuestManager::initDb();
+        
+        // Initialize cache with quest data
+        CacheManager::init($this->categories, $this->quests);
+        DatabaseManager::initDb();
     }
 
     public static function getInstance() : self {
@@ -59,11 +72,11 @@ class OmniQuest extends PluginBase
     }
 
     public function getCategories() {
-        return $this->categories;
+        return CacheManager::getCachedCategories() ?? $this->categories;
     }
 
     public function getQuests() {
-        return $this->quests;
+        return CacheManager::getCachedQuests() ?? $this->quests;
     }
 
     public function getQuestManager(): QuestManager {

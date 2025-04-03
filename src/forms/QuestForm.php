@@ -6,10 +6,8 @@ use AmitxD\OmniQuest\ {
     OmniQuest,
     Manager\QuestManager
 };
-
+use OmniCore\lib\jojoe77777\FormAPI\SimpleForm;
 use pocketmine\player\Player;
-
-use AmitxD\OmniQuest\libs\FormAPI\SimpleForm;
 
 class QuestForm extends SimpleForm
 {
@@ -31,7 +29,7 @@ class QuestForm extends SimpleForm
                     } else {
                         $statut = OmniQuest::getInstance()->getQuestConfig()->get("quest-opened");
                     }
-
+                    
                     $this->addButton($questData["name"] . "\n" . $statut, 0);
                 }
             }

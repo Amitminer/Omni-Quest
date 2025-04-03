@@ -7,7 +7,7 @@ use AmitxD\OmniQuest\{
 	Manager\QuestManager
 };
 
-use AmitxD\OmniQuest\libs\FormAPI\SimpleForm;
+use OmniCore\lib\jojoe77777\FormAPI\SimpleForm;
 
 class CategoryForm extends SimpleForm
 {
