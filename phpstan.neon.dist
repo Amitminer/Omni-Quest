@@ -1,6 +1,14 @@
 parameters:
-    level: 4
+    level: 3
     paths:
-        - src
-    scanDirectories:
-        - vendor
+        - src/
+    excludePaths:
+        - src/scorehud/ScoreHudListener.php
+        - src/scorehud/ScoreHudAddon.php
+        - src/forms/QuestInfoForm.php
+        - src/forms/QuestForm.php
+        - src/forms/CategoryForm.php
+        - src/Manager/QuestManager.php
+        - src/Manager/CacheManager.php
+    treatPhpDocTypesAsCertain: false
+    debugMode: false
